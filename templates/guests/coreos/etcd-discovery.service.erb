@@ -1,0 +1,10 @@
+[Unit]
+Description=Clustered etcd discovery
+Before=etcd.service
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/etcd -addr <%= options[:my_ip] %>:4002 -bind-addr 0.0.0.0 -peer-addr <%= options[:my_ip] %>:7002 -data-dir /home/core/etcd-discovery -name etcd-discovery --peer-bind-addr=<%= options[:my_ip] %>:7002
+
+[Install]
+WantedBy=local.target
