@@ -1,10 +1,10 @@
 [Unit]
 Description=Clustered etcd
-#After=docker.service
+After=etc-discovery.service
 
 [Service]
 Restart=always
-ExecStart=/usr/bin/etcd -c 4001 -s 7001 -h <%= options[:my_ip] %> <% if options[:connection_string] %>-C <%= options[:connection_string] %><% end %> -d /home/core/etcd
+ExecStart=/usr/bin/etcd -addr localhost:4001 -peer-addr <%= options[:my_ip] %>:7001 -data-dir /home/core/etcd -name etcd-%H -peer-bind-addr=<%= options[:my_ip] %>:7001 -discovery <%= options[:discovery_string] %>
 
 [Install]
 WantedBy=local.target
