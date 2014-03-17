@@ -1,4 +1,5 @@
 require "tempfile"
+require "securerandom"
 
 require "vagrant/util/template_renderer"
 
@@ -6,12 +7,13 @@ module VagrantPlugins
   module GuestCoreOS
     module Cap
       class ConfigureNetworks
+        @@discovery_uuid = SecureRandom.uuid
         include Vagrant::Util
-
         def self.configure_networks(machine, networks)
           machine.communicate.tap do |comm|
             # Disable default etcd
             comm.sudo("systemctl stop etcd")
+            comm.sudo("systemctl disable etcd")
 
             # Read network interface names
             interfaces = []
@@ -42,16 +44,22 @@ module VagrantPlugins
 
             primary_machine_ip = get_ip.(primary_machine)
             current_ip = get_ip.(machine)
+            discovery_string = "http://#{primary_machine_ip}:4002/v2/keys/#{@@discovery_uuid}"
+            entry = TemplateRenderer.render("guests/coreos/etcd.service", :options => {
+              :discovery_string => discovery_string,
+              :my_ip => current_ip
+            })
+
             if current_ip == primary_machine_ip
-              entry = TemplateRenderer.render("guests/coreos/etcd.service", :options => {
+              Tempfile.open("vagrant") do |temp|
+                discovery_entry = TemplateRenderer.render("guests/coreos/etcd-discovery.service", :options => {
                   :my_ip => current_ip
                 })
-            else
-              connection_string = "#{primary_machine_ip}:7001"
-              entry = TemplateRenderer.render("guests/coreos/etcd.service", :options => {
-                :connection_string => connection_string,
-                :my_ip => current_ip
-              })
+                temp.binmode
+                temp.write(discovery_entry)
+                temp.close
+                comm.upload(temp.path, "/tmp/etcd-discovery.service")
+              end
             end
 
             Tempfile.open("vagrant") do |temp|
@@ -61,12 +69,14 @@ module VagrantPlugins
               comm.upload(temp.path, "/tmp/etcd-cluster.service")
             end
 
+            if current_ip == primary_machine_ip
+              comm.sudo("mv /tmp/etcd-discovery.service /media/state/units/")
+            end
+
             comm.sudo("mv /tmp/etcd-cluster.service /media/state/units/")
             comm.sudo("systemctl restart local-enable.service")
-
-            # Restart default etcd
-            comm.sudo("systemctl start etcd")
           end
+
         end
       end
     end
